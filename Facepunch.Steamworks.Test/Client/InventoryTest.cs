@@ -7,7 +7,6 @@ namespace Facepunch.Steamworks.Test
 {
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     [TestClass]
     public class Inventory
     {
@@ -16,17 +15,23 @@ namespace Facepunch.Steamworks.Test
         {
             using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
             {
+               while ( client.Inventory.Definitions == null )
+               {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+               }
+
                 Assert.IsNotNull( client.Inventory.Definitions );
                 Assert.AreNotEqual( 0, client.Inventory.Definitions.Length );
 
-                foreach ( var i in client.Inventory.Definitions.Where( x => x.PriceRaw != "" ) )
+                foreach ( var i in client.Inventory.Definitions.Where( x => x.PriceCategory != "" ) )
                 {
                     Console.WriteLine( "{0}: {1} ({2})", i.Id, i.Name, i.Type );
                     Console.WriteLine( "  itemshortname: {0}", i.GetStringProperty( "itemshortname" ) );
                     Console.WriteLine( "  workshopdownload: {0}", i.GetStringProperty( "workshopdownload" ) );
                     Console.WriteLine( "           IconUrl: {0}", i.IconUrl );
                     Console.WriteLine( "      IconLargeUrl: {0}", i.IconLargeUrl );
-                    Console.WriteLine( "          PriceRaw: {0}", i.PriceRaw );
+                    Console.WriteLine( "          PriceRaw: {0}", i.PriceCategory );
                     Console.WriteLine( "      PriceDollars: {0}", i.PriceDollars );
                 }
             }
@@ -37,6 +42,12 @@ namespace Facepunch.Steamworks.Test
         {
             using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
             {
+                while ( client.Inventory.Definitions == null )
+                {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+                }
+
                 Assert.IsNotNull( client.Inventory.Definitions );
                 Assert.AreNotEqual( 0, client.Inventory.Definitions.Length );
 
@@ -59,6 +70,12 @@ namespace Facepunch.Steamworks.Test
         {
             using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
             {
+                while ( client.Inventory.Definitions == null )
+                {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+                }
+
                 Assert.IsNotNull( client.Inventory.Definitions );
                 Assert.AreNotEqual( 0, client.Inventory.Definitions.Length );
 
@@ -81,10 +98,16 @@ namespace Facepunch.Steamworks.Test
         {
             using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
             {
+                while ( client.Inventory.Definitions == null )
+                {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+                }
+
                 bool CallbackCalled = false;
 
                 // OnUpdate hsould be called when we receive a list of our items
-                client.Inventory.OnUpdate = () => { CallbackCalled = true; };
+                client.Inventory.OnUpdate += () => { CallbackCalled = true; };
 
                 // tell steam to download the items
                 client.Inventory.Refresh();
@@ -115,13 +138,51 @@ namespace Facepunch.Steamworks.Test
         }
 
         [TestMethod]
+        public void InventoryItemProperties()
+        {
+            using (var client = new Facepunch.Steamworks.Client(252490))
+            {
+                while ( true )
+                {
+                    client.Update();
+
+                    if (client.Inventory.Items == null) continue;
+
+                    foreach (var item in client.Inventory.Items)
+                    {
+                        Console.WriteLine($"{item.Id} ({item.Definition.Name})");
+
+                        foreach (var property in item.Properties)
+                        {
+                            Console.WriteLine($"  {property.Key} = {property.Value}");
+                        }
+
+                        Console.WriteLine("");
+                    }
+
+                    return;
+                }
+            }
+        }
+
+        [TestMethod]
         public void Deserialize()
         {
             using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
             {
+                while ( client.Inventory.Definitions == null )
+                {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+                }
+
                 Assert.IsTrue( client.IsValid );
+                Assert.IsNotNull(client.Inventory.Definitions);
+                Assert.AreNotEqual(0, client.Inventory.Definitions.Length);
 
                 client.Inventory.Refresh();
+
+                var stopwatch = Stopwatch.StartNew();
 
                 //
                 // Block until we have the items
@@ -129,19 +190,30 @@ namespace Facepunch.Steamworks.Test
                 while ( client.Inventory.SerializedItems == null )
                 {
                     client.Update();
+
+                    if (stopwatch.Elapsed.Seconds > 10)
+                        throw new System.Exception("Getting SerializedItems took too long");
                 }
 
                 Assert.IsNotNull( client.Inventory.SerializedItems );
                 Assert.IsTrue( client.Inventory.SerializedItems.Length > 4 );
 
-                using ( var server = new Facepunch.Steamworks.Server( 252490, 0, 30002, true, "VersionString" ) )
+                using ( var server = new Facepunch.Steamworks.Server( 252490, new ServerInit( "rust", "Rust" ) ) )
                 {
                     server.LogOnAnonymous();
                     Assert.IsTrue( server.IsValid );
 
                     var result = server.Inventory.Deserialize( client.Inventory.SerializedItems );
 
-                    server.UpdateWhile( () => result.IsPending );
+                    stopwatch = Stopwatch.StartNew();
+
+                    while (result.IsPending)
+                    {
+                        server.Update();
+
+                        if (stopwatch.Elapsed.Seconds > 10)
+                            throw new System.Exception("result took too long");
+                    }
 
                     Assert.IsFalse( result.IsPending );
                     Assert.IsNotNull( result.Items );
@@ -151,6 +223,71 @@ namespace Facepunch.Steamworks.Test
                         Console.WriteLine( "Item: {0} ({1})", item.Id, item.DefinitionId );
                         Console.WriteLine( "Item: {0} ({1})", item.Id, item.DefinitionId );
                     }
+                }
+            }
+        }
+
+        [TestMethod]
+        public void PurchaseItems()
+        {
+            using (var client = new Facepunch.Steamworks.Client(252490))
+            {
+                while ( client.Inventory.Definitions == null )
+                {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+                }
+
+                Assert.IsNotNull(client.Inventory.Definitions);
+                Assert.AreNotEqual(0, client.Inventory.Definitions.Length);
+
+                while ( client.Inventory.Currency == null )
+                {
+                    client.Update();
+                }
+
+                var shoppingList = client.Inventory.DefinitionsWithPrices.Take(2).ToArray();
+                bool waitingForCallback = true;
+
+                if ( !client.Inventory.StartPurchase(shoppingList, ( order, tran ) =>
+                {
+                    Console.WriteLine($"Order: {order}, Transaction {tran}");
+                    waitingForCallback = false;
+
+                } ) )
+                {
+                    throw new Exception("Couldn't Buy!");
+                }       
+                
+                while ( waitingForCallback )
+                {
+                    client.Update();
+                }
+            }
+        }
+
+        [TestMethod]
+        public void ListPrices()
+        {
+            using (var client = new Facepunch.Steamworks.Client(252490))
+            {
+                while ( client.Inventory.Definitions == null )
+                {
+                    client.Update();
+                    System.Threading.Thread.Sleep( 10 );
+                }
+
+                Assert.IsNotNull(client.Inventory.Definitions);
+                Assert.AreNotEqual(0, client.Inventory.Definitions.Length);
+
+                while (client.Inventory.Currency == null)
+                {
+                    client.Update();
+                }
+
+                foreach ( var i in client.Inventory.Definitions.Where( x => x.LocalPrice > 0 ) )
+                {
+                    Console.WriteLine( $" {i.Name} - {i.LocalPriceFormatted} ({client.Inventory.Currency})" );
                 }
             }
         }

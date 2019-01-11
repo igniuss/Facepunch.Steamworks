@@ -8,7 +8,6 @@ namespace Facepunch.Steamworks.Test
     [TestClass]
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     public class App
     {
         [TestMethod]
@@ -49,6 +48,16 @@ namespace Facepunch.Steamworks.Test
 
                 var otherBuyTime = client.App.PurchaseTime(590440);
                 Assert.AreEqual(otherBuyTime, DateTime.MinValue);
+            }
+        }
+
+        [TestMethod]
+        public void AppName()
+        {
+            using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
+            {
+                var name = client.App.GetName( 4000 );
+                Console.WriteLine( name );
             }
         }
 

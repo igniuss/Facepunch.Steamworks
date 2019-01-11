@@ -14,7 +14,7 @@ namespace Facepunch.Steamworks
         /// Called when the local client's items are first retrieved, and when they change.
         /// Obviously not called on the server.
         /// </summary>
-        public Action OnUpdate;
+        public event Action OnUpdate;
 
         /// <summary>
         /// A list of items owned by this user. You should call Refresh() before trying to access this, 
@@ -33,28 +33,40 @@ namespace Facepunch.Steamworks
         /// </summary>
         public DateTime SerializedExpireTime;
 
+        /// <summary>
+        /// Controls whether per-item properties (<see cref="Item.Properties"/>) are available or not. Default true.
+        /// This can improve performance of full inventory updates.
+        /// </summary>
+        public bool EnableItemProperties = true;
+
         internal uint LastTimestamp = 0;
 
         internal SteamNative.SteamInventory inventory;
 
-        private Stopwatch fetchRetryTimer;
-
         private bool IsServer { get; set; }
+
+        public event Action OnDefinitionsUpdated;
+
+        public event Action<Result> OnInventoryResultReady;
 
         internal Inventory( BaseSteamworks steamworks, SteamNative.SteamInventory c, bool server )
         {
             IsServer = server;
             inventory = c;
 
+            steamworks.RegisterCallback<SteamNative.SteamInventoryDefinitionUpdate_t>( onDefinitionsUpdated );
+
             Result.Pending = new Dictionary<int, Result>();
 
-            inventory.LoadItemDefinitions();
             FetchItemDefinitions();
+            LoadDefinitions();
+            UpdatePrices();
 
             if ( !server )
             {
-                SteamNative.SteamInventoryResultReady_t.RegisterCallback( steamworks, onResultReady );
-                SteamNative.SteamInventoryFullUpdate_t.RegisterCallback( steamworks, onFullUpdate );
+                steamworks.RegisterCallback<SteamNative.SteamInventoryResultReady_t>( onResultReady );
+                steamworks.RegisterCallback<SteamNative.SteamInventoryFullUpdate_t>( onFullUpdate );
+                
 
                 //
                 // Get a list of our items immediately
@@ -64,12 +76,40 @@ namespace Facepunch.Steamworks
         }
 
         /// <summary>
+        /// Should get called when the definitions get updated from Steam.
+        /// </summary>
+        private void onDefinitionsUpdated( SteamInventoryDefinitionUpdate_t obj )
+        {
+            LoadDefinitions();
+            UpdatePrices();
+
+            if ( OnDefinitionsUpdated != null )
+            {
+                OnDefinitionsUpdated.Invoke();
+            }
+        }
+
+        private bool LoadDefinitions()
+        {
+            var ids = inventory.GetItemDefinitionIDs();
+            if ( ids == null )
+                return false;
+
+            Definitions = ids.Select( x => CreateDefinition( x ) ).ToArray();
+
+            foreach ( var def in Definitions )
+            {
+                def.Link( Definitions );
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// We've received a FULL update
         /// </summary>
-        private void onFullUpdate( SteamInventoryFullUpdate_t data, bool error )
+        private void onFullUpdate( SteamInventoryFullUpdate_t data )
         {
-            if ( error ) return;
-
             var result = new Result( this, data.Handle, false );
             result.Fill();
 
@@ -79,31 +119,38 @@ namespace Facepunch.Steamworks
         /// <summary>
         /// A generic result has returned.
         /// </summary>
-        private void onResultReady( SteamInventoryResultReady_t data, bool error )
+        private void onResultReady( SteamInventoryResultReady_t data )
         {
-            if ( Result.Pending.ContainsKey( data.Handle ) )
+            Result result;
+            if ( Result.Pending.TryGetValue( data.Handle, out result ) )
             {
-                var result = Result.Pending[data.Handle];
+                result.OnSteamResult( data );
 
-                result.OnSteamResult( data, error );
-
-                if ( !error && data.Esult == SteamNative.Result.OK )
+                if ( data.Result == SteamNative.Result.OK )
                 {
                     onResult( result, false );
                 }
 
                 Result.Pending.Remove( data.Handle );
+                result.Dispose();
             }
+            else
+            {
+                result = new Result(this, data.Handle, false);
+                result.Fill();
+            }
+
+            OnInventoryResultReady?.Invoke(result);
         }
 
-        private void onResult( Result r, bool serialize )
+        private void onResult( Result r, bool isFullUpdate )
         {
             if ( r.IsSuccess )
             {
                 //
                 // We only serialize FULL updates
                 //
-                if ( serialize )
+                if ( isFullUpdate )
                 {
                     //
                     // Only serialize if this result is newer than the last one
@@ -116,7 +163,7 @@ namespace Facepunch.Steamworks
                 }
 
                 LastTimestamp = r.Timestamp;
-                ApplyResult( r );
+                ApplyResult( r, isFullUpdate );
             }
 
             r.Dispose();
@@ -128,7 +175,7 @@ namespace Facepunch.Steamworks
         /// Here we're trying to keep our stack up to date with whatever happens
         /// with the crafting, stacking etc
         /// </summary>
-        internal void ApplyResult( Result r )
+        internal void ApplyResult( Result r, bool isFullUpdate )
         {
             if ( IsServer ) return;
 
@@ -137,12 +184,19 @@ namespace Facepunch.Steamworks
                 if ( Items == null )
                     Items = new Item[0];
 
-                Items = Items
-                        .Union( r.Items )
-                        .Distinct()
-                        .Where( x => !r.Removed.Contains( x ) )
-                        .Where( x => !r.Consumed.Contains( x ) )
+                if (isFullUpdate)
+                {
+                    Items = r.Items;
+                }
+                else
+                {
+                    // keep the new item instance because it might have a different quantity, properties, etc
+                    Items = Items
+                        .UnionSelect(r.Items, (oldItem, newItem) => newItem)
+                        .Where(x => !r.Removed.Contains(x))
+                        .Where(x => !r.Consumed.Contains(x))
                         .ToArray();
+                }
 
                 //
                 // Tell everyone we've got new items!
@@ -195,25 +249,15 @@ namespace Facepunch.Steamworks
         /// </summary>
         public Definition CreateDefinition( int id )
         {
-            return new Definition( inventory, id );
+            return new Definition( this, id );
         }
 
-        internal void FetchItemDefinitions()
+        /// <summary>
+        /// Fetch item definitions in case new ones have been added since we've initialized
+        /// </summary>
+        public void FetchItemDefinitions()
         {
-            //
-            // Make sure item definitions are loaded, because we're going to be using them.
-            //
-
-            var ids = inventory.GetItemDefinitionIDs();
-            if ( ids == null )
-                return;
-
-            Definitions = ids.Select( x => CreateDefinition( x ) ).ToArray();
-
-            foreach ( var def in Definitions )
-            {
-                def.Link( Definitions );
-            }
+            inventory.LoadItemDefinitions();
         }
 
         /// <summary>
@@ -221,25 +265,7 @@ namespace Facepunch.Steamworks
         /// </summary>
         public void Update()
         {
-            if ( Definitions == null )
-            {
-                //
-                // Don't try every frame, just try every 10 seconds.
-                //
-                {
-                    if ( fetchRetryTimer != null && fetchRetryTimer.Elapsed.TotalSeconds < 10.0f )
-                        return;
 
-                    if ( fetchRetryTimer == null )
-                        fetchRetryTimer = Stopwatch.StartNew();
-
-                    fetchRetryTimer.Reset();
-                    fetchRetryTimer.Start();
-                }
-
-                FetchItemDefinitions();
-                inventory.LoadItemDefinitions();
-            }
         }
 
         /// <summary>
@@ -247,6 +273,24 @@ namespace Facepunch.Steamworks
         /// This should be immediately populated and available.
         /// </summary>
         public Definition[] Definitions;
+
+        /// <summary>
+        /// A list of item definitions that have prices and so can be bought.
+        /// </summary>
+        public IEnumerable<Definition> DefinitionsWithPrices
+        {
+            get
+            {
+                if ( Definitions == null )
+                    yield break;
+
+                for ( int i=0; i< Definitions.Length; i++ )
+                {
+                    if (Definitions[i].LocalPrice > 0)
+                        yield return Definitions[i];
+                }
+            }
+        }
 
         /// <summary>
         /// Utility, given a "1;VLV250" string, convert it to a 2.5
@@ -266,18 +310,26 @@ namespace Facepunch.Steamworks
         }
 
         /// <summary>
-        /// You really need me to explain what this does?
-        /// Use your brains.
+        /// We might be better off using a dictionary for this, once there's 1000+ definitions
         /// </summary>
         public Definition FindDefinition( int DefinitionId )
         {
             if ( Definitions == null ) return null;
 
-            return Definitions.FirstOrDefault( x => x.Id == DefinitionId );
+            for( int i=0; i< Definitions.Length; i++ )
+            {
+                if ( Definitions[i].Id == DefinitionId )
+                    return Definitions[i];
+            }
+
+            return null;
         }
 
         public unsafe Result Deserialize( byte[] data, int dataLength = -1 )
         {
+            if (data == null)
+                throw new ArgumentException("data should nto be null");
+
             if ( dataLength == -1 )
                 dataLength = data.Length;
 
@@ -342,11 +394,7 @@ namespace Facepunch.Steamworks
         /// </summary>
         public Result SplitStack( Item item, int quantity = 1 )
         {
-            SteamNative.SteamInventoryResult_t resultHandle = -1;
-            if ( !inventory.TransferItemQuantity( ref resultHandle, item.Id, (uint)quantity, ulong.MaxValue ) )
-                return null;
-
-            return new Result( this, resultHandle, true );
+            return item.SplitStack( quantity );
         }
 
         /// <summary>
@@ -359,6 +407,81 @@ namespace Facepunch.Steamworks
                 return null;
 
             return new Result( this, resultHandle, true );
+        }
+
+        /// <summary>
+        /// This is used to grant a specific item to the user. This should 
+        /// only be used for development prototyping, from a trusted server, 
+        /// or if you don't care about hacked clients granting arbitrary items. 
+        /// This call can be disabled by a setting on Steamworks.
+        /// </summary>
+        public Result GenerateItem( Definition target, int amount )
+        {
+            SteamNative.SteamInventoryResult_t resultHandle = -1;
+
+            var newItems = new SteamNative.SteamItemDef_t[] { new SteamNative.SteamItemDef_t() { Value = target.Id } };
+            var newItemC = new uint[] { (uint) amount };
+
+            if ( !inventory.GenerateItems( ref resultHandle, newItems, newItemC, 1 ) )
+                return null;
+
+            return new Result( this, resultHandle, true );
+        }
+
+        public delegate void StartPurchaseSuccess( ulong orderId, ulong transactionId );
+
+        /// <summary>
+        /// Starts the purchase process for the user, given a "shopping cart" of item definitions that the user would like to buy. 
+        /// The user will be prompted in the Steam Overlay to complete the purchase in their local currency, funding their Steam Wallet if necessary, etc.
+        /// 
+        /// If was succesful the callback orderId and transactionId will be non 0
+        /// </summary>
+        public bool StartPurchase( Definition[] items, StartPurchaseSuccess callback = null )
+        {
+            var itemGroup = items.GroupBy(x => x.Id);
+
+            var newItems = itemGroup.Select( x => new SteamItemDef_t { Value = x.Key } ).ToArray();
+            var newItemC = itemGroup.Select( x => (uint) x.Count() ).ToArray();
+
+            var h = inventory.StartPurchase( newItems, newItemC, (uint) newItemC.Length, ( result, error ) =>
+            {
+                if ( error )
+                {
+                    callback?.Invoke(0, 0);
+                }
+                else
+                {
+                    callback?.Invoke(result.OrderID, result.TransID);
+                }
+            });
+
+            return h != null;
+        }
+
+        /// <summary>
+        /// This might be null until Steam has actually recieved the prices.
+        /// </summary>
+        public string Currency { get; private set; }
+
+        public void UpdatePrices()
+        {
+            if (IsServer)
+                return;
+
+           inventory.RequestPrices((result, b) =>
+           {
+               Currency = result.Currency;
+
+               if ( Definitions == null )
+                   return;
+
+               for (int i = 0; i < Definitions.Length; i++)
+               {
+                   Definitions[i].UpdatePrice();
+               }
+
+               OnUpdate?.Invoke();
+           });
         }
     }
 }

@@ -5,7 +5,6 @@ namespace Facepunch.Steamworks.Test
 {
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     [DeploymentItem( "tier0_s.dll" )]
     [DeploymentItem( "vstdlib_s.dll" )]
     [DeploymentItem( "steamclient.dll" )]
@@ -18,8 +17,16 @@ namespace Facepunch.Steamworks.Test
         [TestMethod]
         public void Init()
         {
-            using ( var server = new Facepunch.Steamworks.Server( 252490, 0, 30003, 30004, 30005, false, "VersionString" ) )
+            var serverInit = new ServerInit( "rust", "Rust" );
+            serverInit.GamePort = 28015;
+            serverInit.Secure = true;
+            serverInit.QueryPort = 28016;
+
+            using ( var server = new Facepunch.Steamworks.Server( 252490, serverInit ) )
             {
+                server.ServerName = "My Test Server";
+                server.LogOnAnonymous();
+
                 Assert.IsTrue( server.IsValid );
             }
         }
@@ -27,7 +34,7 @@ namespace Facepunch.Steamworks.Test
         [TestMethod]
         public void PublicIp()
         {
-            using ( var server = new Facepunch.Steamworks.Server( 252490, 0, 30003, 30004, 30005, false, "VersionString" ) )
+            using ( var server = new Facepunch.Steamworks.Server( 252490, new ServerInit( "rust", "Rust" ) ) )
             {
                 server.LogOnAnonymous();
 
@@ -61,7 +68,7 @@ namespace Facepunch.Steamworks.Test
                 var ticket = client.Auth.GetAuthSessionTicket();
                 var ticketBinary = ticket.Data;
 
-                using ( var server = new Facepunch.Steamworks.Server( 252490, 0, 30002, 30003, 30004, true, "VersionString" ) )
+                using ( var server = new Facepunch.Steamworks.Server( 252490, new ServerInit( "rust", "Rust" ) ) )
                 {
                     server.LogOnAnonymous();
 

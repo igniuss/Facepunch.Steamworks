@@ -35,5 +35,46 @@ namespace Facepunch.Steamworks
             client.native.screenshots.TriggerScreenshot();
         }
 
+        public unsafe void Write( byte[] rgbData, int width, int height )
+        {
+            if ( rgbData == null )
+            {
+                throw new ArgumentNullException( nameof(rgbData) );
+            }
+
+            if ( width < 1 )
+            {
+                throw new ArgumentOutOfRangeException( nameof(width), width,
+                    $"Expected {nameof(width)} to be at least 1." );
+            }
+
+            if ( height < 1 )
+            {
+                throw new ArgumentOutOfRangeException( nameof(height), height,
+                    $"Expected {nameof(height)} to be at least 1." );
+            }
+
+            var size = width * height * 3;
+            if ( rgbData.Length < size )
+            {
+                throw new ArgumentException( nameof(rgbData),
+                    $"Expected {nameof(rgbData)} to contain at least {size} elements (actual size: {rgbData.Length})." );
+            }
+
+            fixed ( byte* ptr = rgbData )
+            {
+                client.native.screenshots.WriteScreenshot( (IntPtr) ptr, (uint) rgbData.Length, width, height );
+            }
+        }
+        
+        public unsafe void AddScreenshotToLibrary( string filename, string thumbnailFilename, int width, int height) 
+        {
+            client.native.screenshots.AddScreenshotToLibrary(filename, thumbnailFilename, width, height);
+        }
+
+        public unsafe void AddScreenshotToLibrary( string filename, int width, int height) 
+        {
+            client.native.screenshots.AddScreenshotToLibrary(filename, null, width, height);
+        }
     }
 }

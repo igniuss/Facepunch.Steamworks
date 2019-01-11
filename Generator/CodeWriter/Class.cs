@@ -9,6 +9,7 @@ namespace Generator
     public partial class CodeWriter
     {
         string LastMethodName;
+        int MethodNameCount;
         List<string> BeforeLines;
         List<string> AfterLines;
         string ReturnType;
@@ -41,23 +42,45 @@ namespace Generator
                 WriteLine( "// Holds a platform specific implentation" );
                 WriteLine( "//" );
                 WriteLine( "internal Platform.Interface platform;" );
-                WriteLine( "internal Facepunch.Steamworks.BaseSteamworks steamworks;" );
+
+                if ( classname != "SteamApi" )
+                    WriteLine( "internal Facepunch.Steamworks.BaseSteamworks steamworks;" );
+
                 WriteLine();
 
                 WriteLine( "//" );
                 WriteLine( "// Constructor decides which implementation to use based on current platform" );
                 WriteLine( "//" );
-                StartBlock( $"internal {InterfaceNameToClass( classname )}( Facepunch.Steamworks.BaseSteamworks steamworks, IntPtr pointer )" );
+
+                if ( classname == "SteamApi" )
                 {
-                    WriteLine( "this.steamworks = steamworks;" );
-                    WriteLine( "" );
-                    WriteLine( "if ( Platform.IsWindows64 ) platform = new Platform.Win64( pointer );" );
-                    WriteLine( "else if ( Platform.IsWindows32 ) platform = new Platform.Win32( pointer );" );
-                    WriteLine( "else if ( Platform.IsLinux32 ) platform = new Platform.Linux32( pointer );" );
-                    WriteLine( "else if ( Platform.IsLinux64 ) platform = new Platform.Linux64( pointer );" );
-                    WriteLine( "else if ( Platform.IsOsx ) platform = new Platform.Mac( pointer );" );
+                    
+                    StartBlock( $"internal {InterfaceNameToClass( classname )}()" );
+                    {
+                        WriteLine( "" );
+                        WriteLine( "if ( Platform.IsWindows64 ) platform = new Platform.Win64( ((IntPtr)1) );" );
+                        WriteLine( "else if ( Platform.IsWindows32 ) platform = new Platform.Win32( ((IntPtr)1) );" );
+                        WriteLine( "else if ( Platform.IsLinux32 ) platform = new Platform.Linux32( ((IntPtr)1) );" );
+                        WriteLine( "else if ( Platform.IsLinux64 ) platform = new Platform.Linux64( ((IntPtr)1) );" );
+                        WriteLine( "else if ( Platform.IsOsx ) platform = new Platform.Mac( ((IntPtr)1) );" );
+                    }
+                    EndBlock();
                 }
-                EndBlock();
+                else
+                {
+                    StartBlock( $"internal {InterfaceNameToClass( classname )}( Facepunch.Steamworks.BaseSteamworks steamworks, IntPtr pointer )" );
+                    {
+                        WriteLine( "this.steamworks = steamworks;" );
+                        WriteLine( "" );
+                        WriteLine( "if ( Platform.IsWindows64 ) platform = new Platform.Win64( pointer );" );
+                        WriteLine( "else if ( Platform.IsWindows32 ) platform = new Platform.Win32( pointer );" );
+                        WriteLine( "else if ( Platform.IsLinux32 ) platform = new Platform.Linux32( pointer );" );
+                        WriteLine( "else if ( Platform.IsLinux64 ) platform = new Platform.Linux64( pointer );" );
+                        WriteLine( "else if ( Platform.IsOsx ) platform = new Platform.Mac( pointer );" );
+                    }
+                    EndBlock();
+                }
+                
                 WriteLine();
 
                 WriteLine( "//" );
@@ -121,8 +144,15 @@ namespace Generator
 
             var methodName = m.Name;
 
-            if ( LastMethodName == methodName )
-                methodName += "0";
+            if (LastMethodName == methodName)
+            {
+                methodName += MethodNameCount.ToString();
+                MethodNameCount++;
+            }
+            else
+            {
+                MethodNameCount = 0;
+            }
 
             var argString = string.Join( ", ", argList.Select( x => x.ManagedParameter() ) );
             if ( argString != "" ) argString = " " + argString + " ";
@@ -153,6 +183,7 @@ namespace Generator
 
             AfterLines.Add( "" );
             AfterLines.Add( "if ( CallbackFunction == null ) return null;" );
+            AfterLines.Add("if ( callback == 0 ) return null;");
             AfterLines.Add( "" );
 
             AfterLines.Add( $"return {MethodDef.CallResult}.CallResult( steamworks, callback, CallbackFunction );" );

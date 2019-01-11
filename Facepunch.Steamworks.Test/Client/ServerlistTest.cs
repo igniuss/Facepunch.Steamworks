@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -10,9 +11,25 @@ namespace Facepunch.Steamworks.Test
     [TestClass]
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     public partial class ServerList
     {
+        [TestMethod]
+        public void IpAddressConversions()
+        {
+            var ipstr = "185.38.150.40";
+            var ip = IPAddress.Parse( ipstr );
+
+            var ip_int = Facepunch.Steamworks.Utility.IpToInt32( ip );
+
+            var ip_back = Facepunch.Steamworks.Utility.Int32ToIp( ip_int );
+
+            Console.WriteLine( "ipstr: " + ipstr );
+            Console.WriteLine( "ip: " + ip );
+            Console.WriteLine( "ip int: " + ip_int );
+            Console.WriteLine( "ip_back: " + ip_back );
+        }
+
+
         [TestMethod]
         public void InternetList()
         {
@@ -28,7 +45,7 @@ namespace Facepunch.Steamworks.Test
                 for ( int i = 0; i < 1000; i++ )
                 {
                     client.Update();
-                    System.Threading.Thread.Sleep( 5 );
+                    System.Threading.Thread.Sleep( 100 );
 
                     foreach ( var s in query.Responded )
                     {
@@ -47,7 +64,7 @@ namespace Facepunch.Steamworks.Test
 
                 foreach ( var server in query.Responded.Take( 20 ) )
                 {
-                    Console.WriteLine( "{0} {1}", server.AddressString, server.Name );
+                    Console.WriteLine( "{0} {1}", server.Address, server.Name );
                 }
 
                 query.Dispose();
@@ -370,7 +387,9 @@ namespace Facepunch.Steamworks.Test
 
                 foreach ( var s in query.Responded )
                 {
-                    Console.WriteLine( "{0} - {1}", s.AddressString, s.Name );
+                    Console.WriteLine( "{0} - {1}", s.Address, s.Name );
+
+                    Assert.IsTrue( servers.Contains( $"{s.Address}:{s.QueryPort}" ) );
                 }
 
                 query.Dispose();
@@ -387,9 +406,10 @@ namespace Facepunch.Steamworks.Test
                 filter.Add( "gamedir", "rust" );
                 filter.Add( "secure", "1" );
 
+                filter.Add( "addr", "185.97.254.146" );
+
                 using ( var query = client.ServerList.Internet( filter ) )
                 {
-
                     for ( int i = 0; i < 1000; i++ )
                     {
                         GC.Collect();
@@ -397,8 +417,8 @@ namespace Facepunch.Steamworks.Test
                         GC.Collect();
                         System.Threading.Thread.Sleep( 10 );
 
-                        if ( query.Responded.Count > 20 )
-                            break;
+                    //    if ( query.Responded.Count > 20 )
+                     //       break;
 
                         if ( query.Finished )
                             break;
@@ -406,20 +426,18 @@ namespace Facepunch.Steamworks.Test
 
                     query.Dispose();
 
-                   foreach ( var server in query.Responded.Take( 20 ) )
+                    var servers = query.Responded.Take( 100 );
+
+                   foreach ( var server in servers )
                     {
-                        GC.Collect();
                         server.FetchRules();
-                        GC.Collect();
 
                         int i = 0;
                         while ( !server.HasRules )
                         {
                             i++;
-                            GC.Collect();
                             client.Update();
-                            GC.Collect();
-                            System.Threading.Thread.Sleep( 2 );
+                            System.Threading.Thread.Sleep( 10 );
 
                             if ( i > 100 )
                                 break;
@@ -427,10 +445,19 @@ namespace Facepunch.Steamworks.Test
 
                         if ( server.HasRules )
                         {
+                            Console.WriteLine( "" );
+                            Console.WriteLine( "" );
+                            Console.WriteLine( server.Address );
+                            Console.WriteLine( "" );
+
                             foreach ( var rule in server.Rules )
                             {
                                 Console.WriteLine( rule.Key + " = " + rule.Value );
                             }
+                        }
+                        else
+                        {
+                            Console.WriteLine( "SERVER HAS NO RULES :(" );
                         }
                     }
 

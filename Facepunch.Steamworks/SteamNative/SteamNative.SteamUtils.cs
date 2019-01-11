@@ -56,6 +56,7 @@ namespace SteamNative
 			callback = platform.ISteamUtils_CheckFileSignature( szFileName );
 			
 			if ( CallbackFunction == null ) return null;
+			if ( callback == 0 ) return null;
 			
 			return CheckFileSignature_t.CallResult( steamworks, callback, CallbackFunction );
 		}
@@ -192,6 +193,12 @@ namespace SteamNative
 			return platform.ISteamUtils_IsSteamRunningInVR();
 		}
 		
+		// bool
+		public bool IsVRHeadsetStreamingEnabled()
+		{
+			return platform.ISteamUtils_IsVRHeadsetStreamingEnabled();
+		}
+		
 		// void
 		public void SetOverlayNotificationInset( int nHorizontalInset /*int*/, int nVerticalInset /*int*/ )
 		{
@@ -202,6 +209,12 @@ namespace SteamNative
 		public void SetOverlayNotificationPosition( NotificationPosition eNotificationPosition /*ENotificationPosition*/ )
 		{
 			platform.ISteamUtils_SetOverlayNotificationPosition( eNotificationPosition );
+		}
+		
+		// void
+		public void SetVRHeadsetStreamingEnabled( bool bEnabled /*bool*/ )
+		{
+			platform.ISteamUtils_SetVRHeadsetStreamingEnabled( bEnabled );
 		}
 		
 		// void

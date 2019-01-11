@@ -14,7 +14,7 @@ namespace Facepunch.Steamworks
             internal static Dictionary< int, Result > Pending;
             internal Inventory inventory;
 
-            private SteamNative.SteamInventoryResult_t Handle { get; set; }
+            private SteamNative.SteamInventoryResult_t Handle { get; set; } = -1;
 
             /// <summary>
             /// Called when result is successfully returned
@@ -86,6 +86,7 @@ namespace Facepunch.Steamworks
                 this.inventory = inventory;
             }
 
+
             internal void Fill()
             {
                 if ( _gotResult )
@@ -106,44 +107,35 @@ namespace Facepunch.Steamworks
                 if ( steamItems == null )
                     return;
 
-                Items = steamItems.Where( x => ( (int)x.Flags & (int)SteamNative.SteamItemFlags.Removed ) != (int)SteamNative.SteamItemFlags.Removed && ( (int)x.Flags & (int)SteamNative.SteamItemFlags.Consumed ) != (int)SteamNative.SteamItemFlags.Consumed )
-                .Select( x =>
-                {
-                    return new Inventory.Item()
-                    {
-                        Quantity = x.Quantity,
-                        Id = x.ItemId,
-                        DefinitionId = x.Definition,
-                        TradeLocked = ( (int)x.Flags & (int)SteamNative.SteamItemFlags.NoTrade ) != 0,
-                        Definition = inventory.FindDefinition( x.Definition )
-                    };
-                } ).ToArray();
+                var tempItems = new List<Item>();
+                var tempRemoved = new List<Item>();
+                var tempConsumed = new List<Item>();
 
-                Removed = steamItems.Where( x => ( (int)x.Flags & (int)SteamNative.SteamItemFlags.Removed ) != 0 )
-                .Select( x =>
+                for ( int i=0; i< steamItems.Length; i++ )
                 {
-                    return new Inventory.Item()
+                    var item = inventory.ItemFrom( Handle, steamItems[i], i );
+                    if ( item == null )
                     {
-                        Quantity = x.Quantity,
-                        Id = x.ItemId,
-                        DefinitionId = x.Definition,
-                        TradeLocked = ( (int)x.Flags & (int)SteamNative.SteamItemFlags.NoTrade ) != 0,
-                        Definition = inventory.FindDefinition( x.Definition )
-                    };
-                } ).ToArray();
+                        continue;
+                    }
 
-                Consumed = steamItems.Where( x => ( (int)x.Flags & (int)SteamNative.SteamItemFlags.Consumed ) != 0 )
-                .Select( x =>
-                {
-                    return new Inventory.Item()
+                    if ( ( steamItems[i].Flags & (int)SteamNative.SteamItemFlags.Removed ) != 0 )
                     {
-                        Quantity = x.Quantity,
-                        Id = x.ItemId,
-                        DefinitionId = x.Definition,
-                        TradeLocked = ( (int)x.Flags & (int)SteamNative.SteamItemFlags.NoTrade ) != 0,
-                        Definition = inventory.FindDefinition( x.Definition )
-                    };
-                } ).ToArray();
+                        tempRemoved.Add(item);
+                    }
+                    else if ((steamItems[i].Flags & (int)SteamNative.SteamItemFlags.Consumed) != 0)
+                    {
+                        tempConsumed.Add(item);
+                    }
+                    else
+                    {
+                        tempItems.Add(item);
+                    }
+                }
+
+                Items = tempItems.ToArray();
+                Removed = tempRemoved.ToArray();
+                Consumed = tempConsumed.ToArray();
 
                 if ( OnResult != null )
                 {
@@ -151,9 +143,9 @@ namespace Facepunch.Steamworks
                 }
             }
 
-            internal void OnSteamResult( SteamInventoryResultReady_t data, bool error )
+            internal void OnSteamResult( SteamInventoryResultReady_t data )
             {
-                var success = data.Esult == SteamNative.Result.OK && !error;
+                var success = data.Result == SteamNative.Result.OK;
 
                 if ( success )
                 {
@@ -181,10 +173,44 @@ namespace Facepunch.Steamworks
 
             public void Dispose()
             {
-                inventory.inventory.DestroyResult( Handle );
-                Handle = -1;
+                if ( Handle != -1 && inventory != null )
+                {
+                    inventory.inventory.DestroyResult( Handle );
+                    Handle = -1;
+                }
+
                 inventory = null;
             }
+        }
+
+        internal Item ItemFrom( SteamInventoryResult_t handle, SteamItemDetails_t detail, int index )
+        {
+            Dictionary<string, string> props = null;
+
+            if ( EnableItemProperties && inventory.GetResultItemProperty(handle, (uint) index, null, out string propertyNames) )
+            {
+                props = new Dictionary<string, string>();
+
+                foreach ( var propertyName in propertyNames.Split( ',' ) )
+                {
+                    if ( inventory.GetResultItemProperty(handle, (uint)index, propertyName, out string propertyValue ) )
+                    {
+                        if (propertyName == "error")
+                        {
+                            Console.Write("Steam item error: ");
+                            Console.WriteLine(propertyValue);
+                            return null;
+                        }
+
+                        props.Add(propertyName, propertyValue);
+                    }
+                }
+            }
+
+            var item = new Item( this, detail.ItemId, detail.Quantity, detail.Definition );
+            item.Properties = props;
+
+            return item;
         }
     }
 }

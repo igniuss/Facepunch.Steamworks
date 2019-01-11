@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using SteamNative;
+using Result = Facepunch.Steamworks.Callbacks.Result;
 
 namespace Facepunch.Steamworks
 {
@@ -24,6 +25,9 @@ namespace Facepunch.Steamworks
             public ItemType? Type { get; set; }
             public string Error { get; internal set; } = null;
             public string ChangeNote { get; set; } = "";
+            public uint WorkshopUploadAppId { get; set; }
+            public string MetaData { get; set; } = null;
+            public Dictionary<string, string[]> KeyValues { get; set; } = new Dictionary<string, string[]>();
 
             public enum VisibilityType : int
             {
@@ -36,62 +40,63 @@ namespace Facepunch.Steamworks
 
             public bool NeedToAgreeToWorkshopLegal { get; internal set; }
 
-
+            /// <summary>
+            /// Called when published changes have finished being submitted.
+            /// </summary>
+            public event Action<Result> OnChangesSubmitted;
 
             public double Progress
             {
                 get
                 {
-                    if ( !Publishing ) return 1.0;
-                    if ( CreateItem != null ) return 0.0;
-                    if ( SubmitItemUpdate == null ) return 1.0;
+                    var bt = BytesTotal;
+                    if (bt == 0) return 0;
 
-                    ulong b = 0;
-                    ulong t = 0;
-
-                    workshop.steamworks.native.ugc.GetItemUpdateProgress( UpdateHandle, out b, out t );
-
-                    if ( t == 0 )
-                        return 0;
-
-                    return (double)b / (double) t;
+                    return (double)BytesUploaded / (double)bt;
                 }
             }
+
+            private int bytesUploaded = 0;
 
             public int BytesUploaded
             {
                 get
                 {
-                    if ( !Publishing ) return 0;
-                    if ( CreateItem != null ) return 0;
-                    if ( SubmitItemUpdate == null ) return 0;
+                    if ( !Publishing ) return bytesUploaded;
+                    if (UpdateHandle == 0) return bytesUploaded;
 
                     ulong b = 0;
                     ulong t = 0;
 
                     workshop.steamworks.native.ugc.GetItemUpdateProgress( UpdateHandle, out b, out t );
-                    return (int) b;
+                    bytesUploaded = Math.Max( bytesUploaded, (int) b );
+                    return (int)bytesUploaded;
                 }
             }
+
+            private int bytesTotal = 0;
 
             public int BytesTotal
             {
                 get
                 {
-                    if ( !Publishing ) return 0;
-                    if ( CreateItem != null ) return 0;
-                    if ( SubmitItemUpdate == null ) return 0;
+                    if ( !Publishing ) return bytesTotal;
+                    if (UpdateHandle == 0 ) return bytesTotal;
 
                     ulong b = 0;
                     ulong t = 0;
 
                     workshop.steamworks.native.ugc.GetItemUpdateProgress( UpdateHandle, out b, out t );
-                    return (int)t;
+                    bytesTotal = Math.Max(bytesTotal, (int)t);
+                    return (int)bytesTotal;
                 }
             }
 
             public void Publish()
             {
+                bytesUploaded = 0;
+                bytesTotal = 0;
+
                 Publishing = true;
                 Error = null;
 
@@ -109,28 +114,38 @@ namespace Facepunch.Steamworks
                 if ( !Type.HasValue )
                     throw new System.Exception( "Editor.Type must be set when creating a new item!" );
 
-                CreateItem = workshop.ugc.CreateItem( workshop.steamworks.AppId, (SteamNative.WorkshopFileType)(uint)Type, OnItemCreated );
+                if ( WorkshopUploadAppId == 0 )
+                    throw new Exception( "WorkshopUploadAppId should not be 0" );
+
+                CreateItem = workshop.ugc.CreateItem( WorkshopUploadAppId, (SteamNative.WorkshopFileType)(uint)Type, OnItemCreated );
             }
 
             private void OnItemCreated( SteamNative.CreateItemResult_t obj, bool Failed )
             {
                 NeedToAgreeToWorkshopLegal = obj.UserNeedsToAcceptWorkshopLegalAgreement;
                 CreateItem.Dispose();
+                CreateItem = null;
 
                 if ( obj.Result == SteamNative.Result.OK && !Failed )
                 {
+                    Error = null;
                     Id = obj.PublishedFileId;
                     PublishChanges();
                     return;
                 }
 
-                Error = "Error creating new file: " + obj.Result.ToString() + "("+ obj.PublishedFileId+ ")";
+                Error = $"Error creating new file: {obj.Result} ({obj.PublishedFileId})";
                 Publishing = false;
+                
+                OnChangesSubmitted?.Invoke( (Result) obj.Result );
             }
 
             private void PublishChanges()
             {
-                UpdateHandle = workshop.ugc.StartItemUpdate( workshop.steamworks.AppId, Id );
+                if ( WorkshopUploadAppId == 0 )
+                    throw new Exception( "WorkshopUploadAppId should not be 0" );
+
+                UpdateHandle = workshop.ugc.StartItemUpdate(WorkshopUploadAppId, Id );
 
                 if ( Title != null )
                     workshop.ugc.SetItemTitle( UpdateHandle, Title );
@@ -167,11 +182,25 @@ namespace Facepunch.Steamworks
                     workshop.ugc.SetItemPreview( UpdateHandle, PreviewImage );
                 }
 
+                if ( MetaData != null )
+                {
+                    workshop.ugc.SetItemMetadata( UpdateHandle, MetaData );
+                }
+
+                if ( KeyValues != null )
+                {
+                    foreach ( var key in KeyValues )
+                    {
+                        foreach ( var value in key.Value )
+                        {
+                            workshop.ugc.AddItemKeyValueTag( UpdateHandle, key.Key, value );
+                        }
+                    }
+                }
+
                 /*
                     workshop.ugc.SetItemUpdateLanguage( UpdateId, const char *pchLanguage ) = 0; // specify the language of the title or description that will be set
-                    workshop.ugc.SetItemMetadata( UpdateId, const char *pchMetaData ) = 0; // change the metadata of an UGC item (max = k_cchDeveloperMetadataMax)
                     workshop.ugc.RemoveItemKeyValueTags( UpdateId, const char *pchKey ) = 0; // remove any existing key-value tags with the specified key
-                    workshop.ugc.AddItemKeyValueTag( UpdateId, const char *pchKey, const char *pchValue ) = 0; // add new key-value tags for the item. Note that there can be multiple values for a tag.
                     workshop.ugc.AddItemPreviewFile( UpdateId, const char *pszPreviewFile, EItemPreviewType type ) = 0; //  add preview file for this item. pszPreviewFile points to local file, which must be under 1MB in size
                     workshop.ugc.AddItemPreviewVideo( UpdateId, const char *pszVideoID ) = 0; //  add preview video for this item
                     workshop.ugc.UpdateItemPreviewFile( UpdateId, uint32 index, const char *pszPreviewFile ) = 0; //  updates an existing preview file for this item. pszPreviewFile points to local file, which must be under 1MB in size
@@ -179,29 +208,29 @@ namespace Facepunch.Steamworks
                     workshop.ugc.RemoveItemPreview( UpdateId, uint32 index ) = 0; // remove a preview by index starting at 0 (previews are sorted)
                  */
 
-                SubmitItemUpdate = workshop.ugc.SubmitItemUpdate( UpdateHandle, ChangeNote, OnChangesSubmitted );
+                SubmitItemUpdate = workshop.ugc.SubmitItemUpdate( UpdateHandle, ChangeNote, OnChangesSubmittedInternal );
             }
 
-            private void OnChangesSubmitted( SteamNative.SubmitItemUpdateResult_t obj, bool Failed )
+            private void OnChangesSubmittedInternal( SteamNative.SubmitItemUpdateResult_t obj, bool Failed )
             {
                 if ( Failed )
                     throw new System.Exception( "CreateItemResult_t Failed" );
 
+                UpdateHandle = 0;
                 SubmitItemUpdate = null;
                 NeedToAgreeToWorkshopLegal = obj.UserNeedsToAcceptWorkshopLegalAgreement;
                 Publishing = false;
 
-                if ( obj.Result == SteamNative.Result.OK )
-                {
-                    return;
-                }
+                Error = obj.Result != SteamNative.Result.OK
+                    ? $"Error publishing changes: {obj.Result} ({NeedToAgreeToWorkshopLegal})"
+                    : null;
 
-                Error = "Error publishing changes: " + obj.Result.ToString() + " ("+ NeedToAgreeToWorkshopLegal + ")";
+                OnChangesSubmitted?.Invoke( (Result) obj.Result );
             }
 
             public void Delete()
             {
-                workshop.remoteStorage.DeletePublishedFile( Id );
+                workshop.ugc.DeleteItem( Id );
                 Id = 0;
             }
         }

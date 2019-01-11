@@ -127,6 +127,12 @@ namespace SteamNative
 		InvalidItemType = 104,
 		IPBanned = 105,
 		GSLTExpired = 106,
+		InsufficientFunds = 107,
+		TooManyPending = 108,
+		NoSiteLicensesFound = 109,
+		WGNetworkSendExceeded = 110,
+		AccountNotFriends = 111,
+		LimitedUserAccount = 112,
 	}
 	
 	//
@@ -264,6 +270,7 @@ namespace SteamNative
 		PendingGift = 32768,
 		RentalNotActivated = 65536,
 		Rental = 131072,
+		SiteLicense = 262144,
 	}
 	
 	//
@@ -287,6 +294,7 @@ namespace SteamNative
 		Plugin = 4096,
 		Music = 8192,
 		Series = 16384,
+		Comic = 32768,
 		Shortcut = 1073741824,
 		DepotOnly = -2147483648,
 	}
@@ -340,6 +348,7 @@ namespace SteamNative
 		CommunityBan = 9,
 		MemberBlockedYou = 10,
 		YouBlockedMember = 11,
+		RatelimitExceeded = 15,
 	}
 	
 	//
@@ -437,6 +446,18 @@ namespace SteamNative
 		Oculus_DK2 = 22,
 		Oculus_Rift = 23,
 		Oculus_Unknown = 40,
+		Acer_Unknown = 50,
+		Acer_WindowsMR = 51,
+		Dell_Unknown = 60,
+		Dell_Visor = 61,
+		Lenovo_Unknown = 70,
+		Lenovo_Explorer = 71,
+		HP_Unknown = 80,
+		HP_WindowsMR = 81,
+		Samsung_Unknown = 90,
+		Samsung_Odyssey = 91,
+		Unannounced_Unknown = 100,
+		Unannounced_WindowsMR = 101,
 	}
 	
 	//
@@ -978,7 +999,9 @@ namespace SteamNative
 		CenterTrackpad = 9,
 		RightJoystick = 10,
 		DPad = 11,
-		Count = 12,
+		Key = 12,
+		Mouse = 13,
+		Count = 14,
 	}
 	
 	//
@@ -1001,7 +1024,8 @@ namespace SteamNative
 		MouseJoystick = 12,
 		MouseRegion = 13,
 		RadialMenu = 14,
-		Switches = 15,
+		SingleButton = 15,
+		Switches = 16,
 	}
 	
 	//
@@ -1165,37 +1189,47 @@ namespace SteamNative
 		SteamV2_RightBumper = 153,
 		SteamV2_LeftGrip = 154,
 		SteamV2_RightGrip = 155,
-		SteamV2_Start = 156,
-		SteamV2_Back = 157,
-		SteamV2_LeftPad_Touch = 158,
-		SteamV2_LeftPad_Swipe = 159,
-		SteamV2_LeftPad_Click = 160,
-		SteamV2_LeftPad_DPadNorth = 161,
-		SteamV2_LeftPad_DPadSouth = 162,
-		SteamV2_LeftPad_DPadWest = 163,
-		SteamV2_LeftPad_DPadEast = 164,
-		SteamV2_RightPad_Touch = 165,
-		SteamV2_RightPad_Swipe = 166,
-		SteamV2_RightPad_Click = 167,
-		SteamV2_RightPad_DPadNorth = 168,
-		SteamV2_RightPad_DPadSouth = 169,
-		SteamV2_RightPad_DPadWest = 170,
-		SteamV2_RightPad_DPadEast = 171,
-		SteamV2_LeftTrigger_Pull = 172,
-		SteamV2_LeftTrigger_Click = 173,
-		SteamV2_RightTrigger_Pull = 174,
-		SteamV2_RightTrigger_Click = 175,
-		SteamV2_LeftStick_Move = 176,
-		SteamV2_LeftStick_Click = 177,
-		SteamV2_LeftStick_DPadNorth = 178,
-		SteamV2_LeftStick_DPadSouth = 179,
-		SteamV2_LeftStick_DPadWest = 180,
-		SteamV2_LeftStick_DPadEast = 181,
-		SteamV2_Gyro_Move = 182,
-		SteamV2_Gyro_Pitch = 183,
-		SteamV2_Gyro_Yaw = 184,
-		SteamV2_Gyro_Roll = 185,
-		Count = 186,
+		SteamV2_LeftGrip_Upper = 156,
+		SteamV2_RightGrip_Upper = 157,
+		SteamV2_LeftBumper_Pressure = 158,
+		SteamV2_RightBumper_Pressure = 159,
+		SteamV2_LeftGrip_Pressure = 160,
+		SteamV2_RightGrip_Pressure = 161,
+		SteamV2_LeftGrip_Upper_Pressure = 162,
+		SteamV2_RightGrip_Upper_Pressure = 163,
+		SteamV2_Start = 164,
+		SteamV2_Back = 165,
+		SteamV2_LeftPad_Touch = 166,
+		SteamV2_LeftPad_Swipe = 167,
+		SteamV2_LeftPad_Click = 168,
+		SteamV2_LeftPad_Pressure = 169,
+		SteamV2_LeftPad_DPadNorth = 170,
+		SteamV2_LeftPad_DPadSouth = 171,
+		SteamV2_LeftPad_DPadWest = 172,
+		SteamV2_LeftPad_DPadEast = 173,
+		SteamV2_RightPad_Touch = 174,
+		SteamV2_RightPad_Swipe = 175,
+		SteamV2_RightPad_Click = 176,
+		SteamV2_RightPad_Pressure = 177,
+		SteamV2_RightPad_DPadNorth = 178,
+		SteamV2_RightPad_DPadSouth = 179,
+		SteamV2_RightPad_DPadWest = 180,
+		SteamV2_RightPad_DPadEast = 181,
+		SteamV2_LeftTrigger_Pull = 182,
+		SteamV2_LeftTrigger_Click = 183,
+		SteamV2_RightTrigger_Pull = 184,
+		SteamV2_RightTrigger_Click = 185,
+		SteamV2_LeftStick_Move = 186,
+		SteamV2_LeftStick_Click = 187,
+		SteamV2_LeftStick_DPadNorth = 188,
+		SteamV2_LeftStick_DPadSouth = 189,
+		SteamV2_LeftStick_DPadWest = 190,
+		SteamV2_LeftStick_DPadEast = 191,
+		SteamV2_Gyro_Move = 192,
+		SteamV2_Gyro_Pitch = 193,
+		SteamV2_Gyro_Yaw = 194,
+		SteamV2_Gyro_Roll = 195,
+		Count = 196,
 	}
 	
 	//
@@ -1205,6 +1239,19 @@ namespace SteamNative
 	{
 		SetColor = 0,
 		RestoreUserDefault = 1,
+	}
+	
+	//
+	// ESteamInputType
+	//
+	internal enum SteamInputType : int
+	{
+		Unknown = 0,
+		SteamController = 1,
+		XBox360Controller = 2,
+		XBoxOneController = 3,
+		GenericXInput = 4,
+		PS4Controller = 5,
 	}
 	
 	//
@@ -1327,6 +1374,8 @@ namespace SteamNative
 		NumSecondsPlayed = 8,
 		NumPlaytimeSessions = 9,
 		NumComments = 10,
+		NumSecondsPlayedDuringTimePeriod = 11,
+		NumPlaytimeSessionsDuringTimePeriod = 12,
 	}
 	
 	//
@@ -1420,6 +1469,27 @@ namespace SteamNative
 		NoTrade = 1,
 		Removed = 256,
 		Consumed = 512,
+	}
+	
+	//
+	// EParentalFeature
+	//
+	internal enum ParentalFeature : int
+	{
+		Invalid = 0,
+		Store = 1,
+		Community = 2,
+		Profile = 3,
+		Friends = 4,
+		News = 5,
+		Trading = 6,
+		Settings = 7,
+		Console = 8,
+		Browser = 9,
+		ParentalSetup = 10,
+		Library = 11,
+		Test = 12,
+		Max = 13,
 	}
 	
 }

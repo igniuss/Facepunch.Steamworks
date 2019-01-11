@@ -6,7 +6,6 @@ namespace Facepunch.Steamworks.Test
 {
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     [TestClass]
     public class Friends
     {
@@ -24,6 +23,8 @@ namespace Facepunch.Steamworks.Test
                 foreach ( var friend in client.Friends.All )
                 {
                     Console.WriteLine( "{0}: {1} (Friend:{2}) (Blocked:{3})", friend.Id, friend.Name, friend.IsFriend, friend.IsBlocked );
+
+                    Assert.IsNotNull(friend.GetAvatar( Steamworks.Friends.AvatarSize.Medium ));
                 }
             }
         }
@@ -49,22 +50,51 @@ namespace Facepunch.Steamworks.Test
             {
                 Assert.IsTrue( client.IsValid );
 
-                var friend = client.Friends.All.First();
+                ulong id = (ulong)( 76561197960279927 + (new Random().Next() % 10000));
+                bool passed = false;
 
-                var img = client.Friends.GetAvatar( Steamworks.Friends.AvatarSize.Medium, friend.Id );
+                client.Friends.GetAvatar( Steamworks.Friends.AvatarSize.Medium, id, ( avatar) =>
+                {
+                    if ( avatar == null )
+                    {
+                        Console.WriteLine( "No Avatar" );
+                    }
+                    else
+                    {
+                        Assert.AreEqual( avatar.Width, 64 );
+                        Assert.AreEqual( avatar.Height, 64 );
+                        Assert.AreEqual( avatar.Data.Length, avatar.Width * avatar.Height * 4 );
 
-                Assert.AreEqual( img.Width, 64 );
-                Assert.AreEqual( img.Height, 64 );
+                        DrawImage( avatar );
+                    }
+                    passed = true;
+                });
 
-                while ( !img.IsLoaded && !img.IsError )
+                while (passed == false )
                 {
                     client.Update();
                     System.Threading.Thread.Sleep( 10 );
                 }
+            }
+        }
 
-                Assert.AreEqual( img.Data.Length, img.Width * img.Height * 4 );
+        [TestMethod]
+        public void CachedAvatar()
+        {
+            using (var client = new Facepunch.Steamworks.Client(252490))
+            {
+                Assert.IsTrue(client.IsValid);
 
-                DrawImage( img );
+                var friend = client.Friends.All.First();
+
+                var image = client.Friends.GetCachedAvatar( Steamworks.Friends.AvatarSize.Medium, friend.Id );
+
+                if (image != null)
+                {
+                    Assert.AreEqual(image.Width, 64);
+                    Assert.AreEqual(image.Height, 64);
+                    Assert.AreEqual(image.Data.Length, image.Width * image.Height * 4);
+                }
             }
         }
 
@@ -82,6 +112,7 @@ namespace Facepunch.Steamworks.Test
 
                     var brightness = 1 - ((float)(p.r + p.g + p.b) / (255.0f * 3.0f));
                     var c = (int) ((grad.Length) * brightness);
+                    if ( c > 3 ) c = 3;
                     str += grad[c];
     
                 }

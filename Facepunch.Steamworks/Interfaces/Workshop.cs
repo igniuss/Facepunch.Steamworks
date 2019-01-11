@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using SteamNative;
 
 namespace Facepunch.Steamworks
@@ -20,6 +22,12 @@ namespace Facepunch.Steamworks
     /// </summary>
     public partial class Workshop : IDisposable
     {
+        static Workshop()
+        {
+            Debug.Assert( Marshal.SizeOf( typeof(PublishedFileId_t) ) == Marshal.SizeOf( typeof(ulong) ),
+                $"sizeof({nameof(PublishedFileId_t)}) != sizeof({nameof(UInt64)})" );
+        }
+
         internal const ulong InvalidHandle = 0xffffffffffffffff;
 
         internal SteamNative.SteamUGC ugc;
@@ -29,8 +37,7 @@ namespace Facepunch.Steamworks
 
         /// <summary>
         /// Called when an item has been downloaded. This could have been
-        /// because of a call to Download or because of a subscription triggered
-        /// via the browser/app.
+        /// because of a call to Download.
         /// </summary>
         public event Action<ulong, Callbacks.Result> OnFileDownloaded;
 
@@ -39,7 +46,7 @@ namespace Facepunch.Steamworks
         /// because of a call to Download or because of a subscription triggered
         /// via the browser/app.
         /// </summary>
-        internal event Action<ulong> OnItemInstalled;
+        public event Action<ulong> OnItemInstalled;
 
         internal Workshop( BaseSteamworks steamworks, SteamNative.SteamUGC ugc, SteamNative.SteamRemoteStorage remoteStorage )
         {
@@ -47,8 +54,8 @@ namespace Facepunch.Steamworks
             this.steamworks = steamworks;
             this.remoteStorage = remoteStorage;
 
-            SteamNative.DownloadItemResult_t.RegisterCallback( steamworks, onDownloadResult );
-            SteamNative.ItemInstalled_t.RegisterCallback( steamworks, onItemInstalled );
+            steamworks.RegisterCallback<SteamNative.DownloadItemResult_t>( onDownloadResult );
+            steamworks.RegisterCallback<SteamNative.ItemInstalled_t>( onItemInstalled );
         }
 
         /// <summary>
@@ -65,16 +72,70 @@ namespace Facepunch.Steamworks
             OnItemInstalled = null;
         }
 
-        private void onItemInstalled( SteamNative.ItemInstalled_t obj, bool failed )
+        private void onItemInstalled( SteamNative.ItemInstalled_t obj )
         {
-            if ( OnItemInstalled != null )
+            if ( OnItemInstalled != null && obj.AppID == Client.Instance.AppId )
                 OnItemInstalled( obj.PublishedFileId );
         }
 
-        private void onDownloadResult( SteamNative.DownloadItemResult_t obj, bool failed )
+        private void onDownloadResult( SteamNative.DownloadItemResult_t obj )
         {
-            if ( OnFileDownloaded != null )
+            if ( OnFileDownloaded != null && obj.AppID == Client.Instance.AppId )
                 OnFileDownloaded( obj.PublishedFileId, (Callbacks.Result) obj.Result );
+        }
+
+        /// <summary>
+        /// Get the IDs of all subscribed workshop items. Not all items may be currently installed.
+        /// </summary>
+        public unsafe ulong[] GetSubscribedItemIds()
+        {
+            var count = ugc.GetNumSubscribedItems();
+            var array = new ulong[count];
+
+            fixed ( ulong* ptr = array )
+            {
+                ugc.GetSubscribedItems( (PublishedFileId_t*) ptr, count );
+            }
+
+            return array;
+        }
+
+        [ThreadStatic]
+        private static ulong[] _sSubscribedItemBuffer;
+
+        /// <summary>
+        /// Get the IDs of all subscribed workshop items, avoiding repeated allocations.
+        /// Not all items may be currently installed.
+        /// </summary>
+        public unsafe int GetSubscribedItemIds( List<ulong> destList )
+        {
+            const int bufferSize = 1024;
+
+            var count = ugc.GetNumSubscribedItems();
+
+            if ( count >= bufferSize )
+            {
+                // Fallback for exceptional cases
+                destList.AddRange( GetSubscribedItemIds() );
+                return (int) count;
+            }
+
+            if ( _sSubscribedItemBuffer == null )
+            {
+                _sSubscribedItemBuffer = new ulong[bufferSize];
+            }
+
+            fixed ( ulong* ptr = _sSubscribedItemBuffer)
+            {
+                count = ugc.GetSubscribedItems( (PublishedFileId_t*) ptr, bufferSize );
+            }
+
+            for ( var i = 0; i < count; ++i )
+            {
+                destList.Add( _sSubscribedItemBuffer[i] );
+            }
+
+            return (int) count;
         }
 
         /// <summary>
@@ -97,11 +158,22 @@ namespace Facepunch.Steamworks
         /// Create a new Editor object with the intention of creating a new item.
         /// Your item won't actually be created until you call Publish() on the object.
         /// </summary>
-        public Editor CreateItem( ItemType type )
+        public Editor CreateItem( ItemType type = ItemType.Community )
         {
-            return new Editor() { workshop = this, Type = type };
+        	return CreateItem(this.steamworks.AppId, type);
         }
-
+        
+        /// <summary>
+        /// Create a new Editor object with the intention of creating a new item.
+        /// Your item won't actually be created until you call Publish() on the object.
+        /// Your item will be published to the provided appId.
+        /// </summary>
+        /// <remarks>You need to add app publish permissions for cross app uploading to work.</remarks> 
+        public Editor CreateItem( uint workshopUploadAppId, ItemType type = ItemType.Community )
+        {
+        	return new Editor() { workshop = this, WorkshopUploadAppId = workshopUploadAppId, Type = type };
+        }
+        
         /// <summary>
         /// Returns a class representing this ItemId. We don't query
         /// item name, description etc. We don't verify that item exists.
@@ -109,7 +181,7 @@ namespace Facepunch.Steamworks
         /// </summary>
         public Editor EditItem( ulong itemId )
         {
-            return new Editor() { workshop = this, Id = itemId };
+            return new Editor() { workshop = this, Id = itemId, WorkshopUploadAppId = steamworks.AppId };
         }
 
         /// <summary>
@@ -122,7 +194,6 @@ namespace Facepunch.Steamworks
         {
             return new Item( itemid, this );
         }
-
 
         /// <summary>
         /// How a query should be ordered.

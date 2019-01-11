@@ -42,26 +42,40 @@ namespace Facepunch.Steamworks
                 item.Score = details.Score;
                 item.VotesUp = details.VotesUp;
                 item.VotesDown = details.VotesDown;
-                item.Modified = new DateTime( details.TimeUpdated );
-                item.Created = new DateTime( details.TimeCreated );
+                item.Modified = Utility.Epoch.ToDateTime( details.TimeUpdated );
+                item.Created = Utility.Epoch.ToDateTime( details.TimeCreated );
 
                 return item;
             }
 
-            public void Download( bool highPriority = true )
+            public bool Download( bool highPriority = true )
             {
-                if ( Installed ) return;
-                if ( Downloading ) return;
+                if ( Installed ) return true;
+                if ( Downloading ) return true;
 
                 if ( !workshop.ugc.DownloadItem( Id, highPriority ) )
                 {
                     Console.WriteLine( "Download Failed" );
-                    return;
+                    return false;
                 }
 
                 workshop.OnFileDownloaded += OnFileDownloaded;
                 workshop.OnItemInstalled += OnItemInstalled;
+                return true;
             }
+
+            public void Subscribe()
+            {
+                workshop.ugc.SubscribeItem(Id);
+                SubscriptionCount++;
+            }
+
+            public void UnSubscribe()
+            {
+                workshop.ugc.UnsubscribeItem(Id);
+                SubscriptionCount--;
+            }
+
 
             private void OnFileDownloaded( ulong fileid, Callbacks.Result result )
             {

@@ -3,13 +3,14 @@ using System.Text;
 using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Linq;
+using System.Diagnostics;
+using Facepunch.Steamworks.Callbacks;
 
 namespace Facepunch.Steamworks.Test
 {
     [TestClass]
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     public class WorkshopTest
     {
         [TestMethod]
@@ -396,6 +397,7 @@ namespace Facepunch.Steamworks.Test
 
                 var item = client.Workshop.GetItem( 844466101 );
 
+                var time = Stopwatch.StartNew();
                 if ( !item.Installed )
                 {
                     item.Download();
@@ -405,6 +407,9 @@ namespace Facepunch.Steamworks.Test
                         Thread.Sleep( 500 );
                         client.Update();
                         Console.WriteLine( "Download Progress: {0}", item.DownloadProgress );
+
+                        if (time.Elapsed.Seconds > 30)
+                            throw new Exception("item.Installed Took Too Long");
                     }
                 }
 
@@ -433,6 +438,27 @@ namespace Facepunch.Steamworks.Test
                 item.Tags.Add( "Apple" );
                 item.Tags.Add( "Banana" );
 
+                // Make a folder
+                var testFolder = new System.IO.DirectoryInfo("BlahBlah");
+                if (!testFolder.Exists) testFolder.Create();
+
+                item.Folder = testFolder.FullName;
+
+                // Upload a file of random bytes
+                var rand = new Random();
+                var testFile = new byte[1024 * 1024 * 32];
+                rand.NextBytes(testFile);
+                System.IO.File.WriteAllBytes( testFolder.FullName + "/testfile1.bin", testFile);
+
+
+                Console.WriteLine(item.Folder);
+
+                item.OnChangesSubmitted += result =>
+                {
+                    Console.WriteLine( "OnChangesSubmitted called: " + result );
+                    Assert.AreEqual( Result.OK, result );
+                };
+
                 try
                 {
                     item.Publish();
@@ -440,7 +466,11 @@ namespace Facepunch.Steamworks.Test
                     while ( item.Publishing )
                     {
                         client.Update();
-                        Thread.Sleep( 100 );
+                        Thread.Sleep( 10 );
+
+                        Console.WriteLine("Progress: " + item.Progress);
+                        Console.WriteLine("BytesUploaded: " + item.BytesUploaded);
+                        Console.WriteLine("BytesTotal: " + item.BytesTotal);
                     }
 
                     Assert.IsFalse( item.Publishing );
@@ -469,6 +499,8 @@ namespace Facepunch.Steamworks.Test
                 {
                     Console.WriteLine( "Deleting: {0}", item.Id );
                     item.Delete();
+
+                    System.IO.File.Delete(testFolder.FullName + "/testfile.bin");
                 }
             }
         }

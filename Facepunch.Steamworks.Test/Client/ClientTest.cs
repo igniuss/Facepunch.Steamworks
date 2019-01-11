@@ -9,7 +9,6 @@ namespace Facepunch.Steamworks.Test
     [TestClass]
     [DeploymentItem( "steam_api.dll" )]
     [DeploymentItem( "steam_api64.dll" )]
-    [DeploymentItem( "steam_appid.txt" )]
     public partial class Client
     {
         [TestMethod]
@@ -84,6 +83,8 @@ namespace Facepunch.Steamworks.Test
             var sw = new Stopwatch();
             using ( var client = new Facepunch.Steamworks.Client( 252490 ) )
             {
+                Assert.IsTrue(client.IsValid);
+
                 for( int i=0; i<1024; i++ )
                 {
                     sw.Restart();

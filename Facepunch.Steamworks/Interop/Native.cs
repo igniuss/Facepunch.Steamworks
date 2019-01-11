@@ -12,6 +12,7 @@ namespace Facepunch.Steamworks.Interop
         internal SteamNative.SteamClient client;
         internal SteamNative.SteamUser user;
         internal SteamNative.SteamApps apps;
+        internal SteamNative.SteamAppList applist;
         internal SteamNative.SteamFriends friends;
         internal SteamNative.SteamMatchmakingServers servers;
         internal SteamNative.SteamMatchmaking matchmaking;
@@ -28,32 +29,36 @@ namespace Facepunch.Steamworks.Interop
 
         private bool isServer;
 
-        private HSteamUser hUser;
-        private HSteamPipe hPipe;
-
         internal bool InitClient( BaseSteamworks steamworks )
         {
+            if ( Steamworks.Server.Instance != null )
+                throw new System.Exception("Steam client should be initialized before steam server - or there's big trouble.");
+
             isServer = false;
 
-            api = new SteamNative.SteamApi( steamworks, (IntPtr) 1 );
+            api = new SteamNative.SteamApi();
 
             if ( !api.SteamAPI_Init() )
+            {
+                Console.Error.WriteLine( "InitClient: SteamAPI_Init returned false" );
                 return false;
+            }
 
-            hUser = api.SteamAPI_GetHSteamUser();
-            hPipe = api.SteamAPI_GetHSteamPipe();
+            var hUser = api.SteamAPI_GetHSteamUser();
+            var hPipe = api.SteamAPI_GetHSteamPipe();
             if ( hPipe == 0 )
+            {
+                Console.Error.WriteLine( "InitClient: hPipe == 0" );
                 return false;
+            }
 
             FillInterfaces( steamworks, hUser, hPipe );
 
             if ( !user.IsValid )
+            {
+                Console.Error.WriteLine( "InitClient: ISteamUser is null" );
                 return false;
-
-            // Ensure that the user has logged into Steam. This will always return true if the game is launched
-            // from Steam, but if Steam is at the login prompt when you run your game it will return false.
-            if ( !user.BLoggedOn() )
-                return false;
+            }
 
             return true;
         }
@@ -62,17 +67,21 @@ namespace Facepunch.Steamworks.Interop
         {
             isServer = true;
 
-            api = new SteamNative.SteamApi( steamworks, ( IntPtr)1 );
+            api = new SteamNative.SteamApi();
 
             if ( !api.SteamInternal_GameServer_Init( IpAddress, usPort, GamePort, QueryPort, eServerMode, pchVersionString ) )
             {
+                Console.Error.WriteLine( "InitServer: GameServer_Init returned false" );
                 return false;
             }
 
-            hUser = api.SteamGameServer_GetHSteamUser();
-            hPipe = api.SteamGameServer_GetHSteamPipe();
+            var hUser = api.SteamGameServer_GetHSteamUser();
+            var hPipe = api.SteamGameServer_GetHSteamPipe();
             if ( hPipe == 0 )
+            {
+                Console.Error.WriteLine( "InitServer: hPipe == 0" );
                 return false;
+            }
 
             FillInterfaces( steamworks, hPipe, hUser );
 
@@ -110,31 +119,11 @@ namespace Facepunch.Steamworks.Interop
             screenshots = client.GetISteamScreenshots( huser, hpipe, SteamNative.Defines.STEAMSCREENSHOTS_INTERFACE_VERSION );
             remoteStorage = client.GetISteamRemoteStorage( huser, hpipe, SteamNative.Defines.STEAMREMOTESTORAGE_INTERFACE_VERSION );
             matchmaking = client.GetISteamMatchmaking( huser, hpipe, SteamNative.Defines.STEAMMATCHMAKING_INTERFACE_VERSION );
+            applist = client.GetISteamAppList( huser, hpipe, SteamNative.Defines.STEAMAPPLIST_INTERFACE_VERSION );
         }
 
         public void Dispose()
         {
-            if ( client != null )
-            {
-                if ( hPipe != 0 )
-                {
-                    if ( hUser != 0 )
-                    {
-                        client.ReleaseUser( hPipe, hUser );
-                        hUser = 0;
-                    }
-
-                    client.BReleaseSteamPipe( hPipe );
-                    hPipe = 0;
-                }
-
-                if ( !client.BShutdownIfAllPipesClosed() )
-                    Console.WriteLine( "BShutdownIfAllPipesClosed returned false" );
-
-                client.Dispose();
-                client = null;
-            }
-
             if ( user != null )
             {
                 user.Dispose();
@@ -184,12 +173,7 @@ namespace Facepunch.Steamworks.Interop
             }
 
             if ( gameServer != null )
-            {
-                //
-                // Calling this can cause the process to hang
-                //
-                //gameServer.LogOff();
-                
+            {              
                 gameServer.Dispose();
                 gameServer = null;
             }
@@ -224,12 +208,37 @@ namespace Facepunch.Steamworks.Interop
                 remoteStorage = null;
             }
 
+            if ( matchmaking != null )
+            {
+                matchmaking.Dispose();
+                matchmaking = null;
+            }
+
+            if ( applist != null )
+            {
+                applist.Dispose();
+                applist = null;
+            }
+
+            if ( client != null )
+            {
+                client.Dispose();
+                client = null;
+            }
+
             if ( api != null )
             {
                 if ( isServer )
                     api.SteamGameServer_Shutdown();
                 else
                     api.SteamAPI_Shutdown();
+
+                //
+                // The functions above destroy the pipeline handles
+                // and all of the classes. Trying to call a steam function
+                // at this point will result in a crash - because any
+                // pointers we stored are not invalid.
+                //
 
                 api.Dispose();
                 api = null;

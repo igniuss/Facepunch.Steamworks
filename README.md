@@ -41,7 +41,7 @@ You can view examples of everything in the Facepunch.Steamworks.Test project.
 
 ## Client
 
-Compile and add the library to your project. To create a client you can do this.
+Compile the Facepunch.Steamworks project and add the library to your Unity project. To create a client you can do this.
 
 ```csharp
 var client = new Facepunch.Steamworks.Client( 252490 );
@@ -63,10 +63,42 @@ Or use it in a using block if you can.
 To create a server do this.
 
 ```csharp
-var server = new Facepunch.Steamworks.Server( 252490, 0, 28015, true, "MyGame453" );
+ServerInit options = new ServerInit("GameDirectoryName", "GameDescription");
+```
+
+```csharp
+var server = new Facepunch.Steamworks.Server(252490, options);
 ```
 
 This will register a secure server for game 252490, any ip, port 28015. Again, more usage in the Facepunch.Steamworks.Test project.
+
+## Lobby
+
+To create a Lobby do this.
+```csharp
+client.Lobby.Create(Steamworks.Lobby.Type.Public, 10);
+```
+
+Created lobbies are auto-joined, but if you want to find a friend's lobby, you'd call
+```csharp
+client.LobbyList.Refresh();
+//wait for the callback
+client.LobbyList.OnLobbiesUpdated = () =>
+{
+    if (client.LobbyList.Finished)
+    {
+        foreach (LobbyList.Lobby lobby in client.LobbyList.Lobbies)
+        {
+            Console.WriteLine($"Found Lobby: {lobby.Name}");
+        }
+    }
+};
+//join a lobby you found
+client.Lobby.Join(LobbyList.Lobbies[0]);
+```
+
+Your can find more examples of Lobby functionality in the Lobby.cs file in the test project. Sending chat messages, assinging lobby data and member data, etc.
+
 
 # Unity
 
@@ -80,7 +112,7 @@ The TLDR is before you create the Client or the Server, call this to let Facepun
 Facepunch.Steamworks.Config.ForUnity( Application.platform.ToString() );
 ```
 
-You'll also want to put steam_api64.dll and steam_appid.txt (on windows 64) in your project root next to Assets.
+You'll also want to put steam_api64.dll and steam_appid.txt (on windows 64) in your project root next to Assets, and use an editor script like [this](https://github.com/Facepunch/Facepunch.Steamworks.Unity/blob/master/Assets/Scripts/Editor/CopySteamLibraries.cs) to copy them into standalone builds.
 
 # Help
 
